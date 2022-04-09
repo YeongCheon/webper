@@ -2,7 +2,7 @@
 
 ``` bash
 BUCKET_NAME=YOUR_OWN_BUCKET_NAME
-DOCKER_TAG=YOUR_OWN_DOCKER_TAG .
+DOCKER_TAG=YOUR_OWN_DOCKER_TAG
 
 go build -o webper cmd/main.go
 docker build -t $DOCKER_TAG .
