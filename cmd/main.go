@@ -49,7 +49,11 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 
 	switch imageType {
+	case image.BMP:
+		fallthrough
 	case image.PNG:
+		fallthrough
+	case image.WEBP:
 		fallthrough
 	case image.JPG:
 		err = image.RunCwebp(ctx, &b, w)
