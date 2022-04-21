@@ -3,14 +3,22 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
-	"github.com/yeongcheon/webper/internal/image"
+	"github.com/disintegration/imaging"
+	imgWebp "github.com/yeongcheon/webper/internal/image"
 	"github.com/yeongcheon/webper/internal/storage"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+
+	"errors"
+	"github.com/chai2010/webp"
+	"image"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 )
 
 func main() {
@@ -30,40 +38,98 @@ func main() {
 }
 
 func handler(w http.ResponseWriter, req *http.Request) {
+	query := req.URL.Query()
+	width, widthErr := strconv.Atoi(query.Get("width"))
+
+	if widthErr != nil {
+		width = 0
+	}
+
 	imageName := strings.TrimPrefix(req.URL.Path, "/")
-	log.Println(imageName)
 
 	var b bytes.Buffer
 	r, err := storage.ReadImage(context.Background(), imageName)
 	if err != nil {
-		panic(err)
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	tee := io.TeeReader(r, &b)
-	_, imageType, err := image.GetImageType(tee)
+	_, imageType, err := imgWebp.GetImageType(tee)
 	if err != nil {
-		panic(err)
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
+
 	io.ReadAll(tee)
+
+	var resizedBuf bytes.Buffer
+
+	if width > 0 {
+		resize(&b, &resizedBuf, imageType, width)
+	} else {
+		resizedBuf = b
+	}
 
 	ctx := context.Background()
 
 	switch imageType {
-	case image.BMP:
+	case imgWebp.BMP:
 		fallthrough
-	case image.PNG:
+	case imgWebp.PNG:
 		fallthrough
-	case image.WEBP:
+	case imgWebp.WEBP:
 		fallthrough
-	case image.JPG:
-		err = image.RunCwebp(ctx, &b, w)
-	case image.GIF:
-		err = image.RunGif2Webp(ctx, &b, w)
+	case imgWebp.JPG:
+		err = imgWebp.RunCwebp(ctx, &resizedBuf, w)
+	case imgWebp.GIF:
+		err = imgWebp.RunGif2Webp(ctx, &resizedBuf, w)
 	default:
 		err = errors.New("invalid image format")
 	}
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func resize(
+	r io.Reader,
+	w io.Writer,
+	imageType imgWebp.ImageType,
+	width int,
+) error {
+	img, err := imaging.Decode(r, imaging.AutoOrientation(true))
+	if err != nil {
+		return err
+	}
+
+	var resizeImg image.Image
+
+	if width <= 0 {
+		resizeImg = img
+	} else {
+		resizeImg = imaging.Resize(img, width, 0, imaging.Lanczos)
+	}
+
+	switch imageType {
+	case imgWebp.JPG:
+		err = jpeg.Encode(w, resizeImg, nil)
+	case imgWebp.PNG:
+		err = png.Encode(w, resizeImg)
+	case imgWebp.WEBP:
+		err = webp.Encode(w, resizeImg, nil)
+	case imgWebp.GIF:
+		err = gif.Encode(w, resizeImg, nil)
+	case imgWebp.BMP:
+		// err = bmp.Encode(&tmp, resizeImg)
+		fallthrough
+	case imgWebp.TIFF:
+		// err = tiff.Encode(&tmp, resizeImg, nil)
+		fallthrough
+	default:
+		return errors.New("unknown file type")
+	}
+
+	return nil
 }
