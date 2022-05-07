@@ -91,6 +91,8 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+
+	w.Header().Set("Cache-Control", "max-age=31536000, public")
 }
 
 func resize(
